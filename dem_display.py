@@ -40,17 +40,18 @@ try:
     
     # Create Folium Map
     folium_map = folium.Map(
-        location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
-        zoom_start=12,
-        tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        attr='Google Satellite',
+    location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
+    zoom_start=12,
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr='ESRI Satellite',
     )
+
     
     # Add Image Overlay to Folium Map
     image_overlay = ImageOverlay(
         rgba_image,
         bounds=[[dem_bounds.bottom, dem_bounds.left], [dem_bounds.top, dem_bounds.right]],
-        opacity=0.8,
+        opacity=0.6,
     )
     image_overlay.add_to(folium_map)
     
