@@ -5,3 +5,4 @@ geopandas
 requests
 folium
 rasterio
+streamlit_folium
