@@ -42,7 +42,8 @@ try:
     folium_map = folium.Map(
         location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
         zoom_start=12,
-        tiles="OpenStreetMap"
+        tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr='Google Satellite',
     )
     
     # Add Image Overlay to Folium Map
