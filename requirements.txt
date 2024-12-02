@@ -3,5 +3,4 @@ geopandas
 streamlit
 geopandas
 requests
-io
 folium
