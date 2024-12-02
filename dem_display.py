@@ -38,21 +38,12 @@ try:
     # Convert colormap to RGBA image
     rgba_image = (colormap * 255).astype(np.uint8)
     
-#     folium_map = folium.Map(
-#     location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
-#     zoom_start=12,
-#     tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-#     attr='Google Satellite',
-# )
-
-    
     # Create Folium Map
-   folium_map = folium.Map(
-   location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
-   zoom_start=12,
-   tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-   attr='Google Satellite',
-)
+    folium_map = folium.Map(
+        location=[(dem_bounds.top + dem_bounds.bottom) / 2, (dem_bounds.left + dem_bounds.right) / 2],
+        zoom_start=12,
+        tiles="OpenStreetMap"
+    )
     
     # Add Image Overlay to Folium Map
     image_overlay = ImageOverlay(
