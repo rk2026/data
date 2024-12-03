@@ -23,7 +23,7 @@ def fetch_github_file(url):
     try:
         response = requests.get(url)
         response.raise_for_status()
-        return BytesIO(response.content)
+        return BytesIO(response.content) 
     except Exception as e:
         st.error(f"Error fetching file: {e}")
         return None
