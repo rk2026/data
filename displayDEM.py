@@ -129,6 +129,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
             x=x, 
             y=y, 
             colorscale='Viridis', 
+            showscale=False,  # Remove color scale legend
             name='Terrain Elevation',
             opacity=0.7
         )
@@ -159,44 +160,52 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
                 z=boundary_z,
                 mode='lines',
                 line=dict(color='red', width=2),
-                name='Administrative Boundary'
+                showlegend=False
             )
             traces.append(boundary_trace)
         
-        # Add min and max elevation points
+        # Add min and max elevation points with draped positioning
         for _, row in zonal_results.iterrows():
-            # Minimum elevation point
+            # Find the closest grid point for min elevation
+            min_x_idx = np.argmin(np.abs(x - row['min_lon']))
+            min_y_idx = np.argmin(np.abs(y - row['min_lat']))
+            min_z = dem_array[min_y_idx, min_x_idx] * z_scale
+            
+            # Find the closest grid point for max elevation
+            max_x_idx = np.argmin(np.abs(x - row['max_lon']))
+            max_y_idx = np.argmin(np.abs(y - row['max_lat']))
+            max_z = dem_array[max_y_idx, max_x_idx] * z_scale
+            
+            # Minimum elevation point (draped)
             min_trace = go.Scatter3d(
                 x=[row['min_lon']], 
                 y=[row['min_lat']], 
-                z=[np.interp(row['min_elevation'], 
-                             [dem_array.min(), dem_array.max()], 
-                             [dem_array.min() * z_scale, dem_array.max() * z_scale]) + 0.01],
+                z=[min_z],
                 mode='markers',
                 marker=dict(
                     size=10,
                     color='blue',
                     opacity=0.8
                 ),
-                name=f"Min Elev: {row.get('min_elevation', 'N/A')}m\n"
+                showlegend=False,
+                text=f"Min Elev: {row.get('min_elevation', 'N/A')}m<br>"
                      f"Ward: {row.get('NEW_WARD_N', 'N/A')}"
             )
             traces.append(min_trace)
             
-            # Maximum elevation point
+            # Maximum elevation point (draped)
             max_trace = go.Scatter3d(
                 x=[row['max_lon']], 
                 y=[row['max_lat']], 
-                z=[np.interp(row['max_elevation'], 
-                             [dem_array.min(), dem_array.max()], 
-                             [dem_array.min() * z_scale, dem_array.max() * z_scale]) + 0.01],
+                z=[max_z],
                 mode='markers',
                 marker=dict(
                     size=10,
                     color='red',
                     opacity=0.8
                 ),
-                name=f"Max Elev: {row.get('max_elevation', 'N/A')}m\n"
+                showlegend=False,
+                text=f"Max Elev: {row.get('max_elevation', 'N/A')}m<br>"
                      f"Ward: {row.get('NEW_WARD_N', 'N/A')}"
             )
             traces.append(max_trace)
@@ -206,7 +215,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         # Update layout for full-screen and better view
         fig.update_layout(
-            title='3D Terrain Visualization with Elevation Points',
+            title='3D Terrain Visualization',
             scene=dict(
                 xaxis_title='Longitude',
                 yaxis_title='Latitude',
@@ -218,7 +227,9 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
                 )
             ),
             height=900,  # Increased height
-            width=1200,  # Increased width
+            width=1600,  # Significantly increased width
+            margin=dict(l=0, r=0, t=30, b=0),  # Reduced margins
+            showlegend=False  # Remove legend completely
         )
         
         return fig
@@ -228,9 +239,9 @@ def main():
     
     # GitHub URLs (replace with actual URLs)
     dem_url = st.text_input("Enter DEM File GitHub URL", 
-                            "https://github.com/rk2026/data/raw/main/DHADING_Thakre.tif")
+                            "https://github.com/your_username/repo/raw/main/DHADING_Thakre.tif")
     vector_url = st.text_input("Enter Vector Layer GitHub URL", 
-                               "https://github.com/rk2026/data/raw/main/Bagmati_ward.gpkg")
+                               "https://github.com/your_username/repo/raw/main/Bagmati_ward.gpkg")
     
     if st.button("Process Data"):
         with st.spinner("Processing DEM and Vector Data..."):
