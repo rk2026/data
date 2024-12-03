@@ -7,3 +7,8 @@ folium
 rasterio
 streamlit_folium
 matplotlib
+plotly
+rasterio
+numpy
+plotly
+requests
