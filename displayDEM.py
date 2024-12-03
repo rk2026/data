@@ -6,21 +6,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 from rasterio.mask import mask
-from rasterio.features import geometry_mask
 import requests
 from io import BytesIO
 import shapely
 
 def fetch_github_file(url):
-    """
-    Fetch file from GitHub URL
-    
-    Args:
-        url (str): Direct download URL for the file
-    
-    Returns:
-        bytes: File content
-    """
+    """Fetch file from GitHub URL"""
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -32,10 +23,6 @@ def fetch_github_file(url):
 def process_dem_zonal_stats(dem_path, vector_path):
     """
     Perform zonal statistics on DEM raster within vector polygons
-    
-    Args:
-        dem_path (str/BytesIO): Path or file-like object of DEM raster
-        vector_path (str/BytesIO): Path or file-like object of vector layer
     
     Returns:
         GeoDataFrame with zonal statistics
@@ -109,16 +96,11 @@ def process_dem_zonal_stats(dem_path, vector_path):
         
         # Create GeoDataFrame from results
         results_gdf = gpd.GeoDataFrame(zonal_results, crs=gdf.crs)
-        return results_gdf
+        return results_gdf, intersecting_gdf
 
-def create_3d_visualization(dem_path, vector_path, zonal_results):
+def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
     """
-    Create 3D visualization combining DEM and vector layers
-    
-    Args:
-        dem_path (str/BytesIO): Path to DEM raster
-        vector_path (str/BytesIO): Path to vector layer
-        zonal_results (GeoDataFrame): Processed zonal statistics
+    Create enhanced 3D visualization combining DEM and vector layers
     
     Returns:
         Plotly Figure
@@ -130,15 +112,20 @@ def create_3d_visualization(dem_path, vector_path, zonal_results):
         
         # Get raster bounds and transform
         bounds = dem.bounds
-        transform = dem.transform
         
         # Create x and y coordinates
         x = np.linspace(bounds.left, bounds.right, dem_array.shape[1])
         y = np.linspace(bounds.bottom, bounds.top, dem_array.shape[0])
         
-        # Create 3D surface plot of DEM
+        # Calculate z-scale factor (typically < 1 to avoid vertical exaggeration)
+        elevation_range = dem_array.max() - dem_array.min()
+        lat_range = bounds.top - bounds.bottom
+        lon_range = bounds.right - bounds.left
+        z_scale = min(lat_range, lon_range) / elevation_range * 0.1
+        
+        # Create 3D surface plot of DEM with adjusted z-scale
         surface_trace = go.Surface(
-            z=dem_array, 
+            z=dem_array * z_scale, 
             x=x, 
             y=y, 
             colorscale='Viridis', 
@@ -149,30 +136,42 @@ def create_3d_visualization(dem_path, vector_path, zonal_results):
         # Prepare data for traces
         traces = [surface_trace]
         
-        # Read vector layer
-        vector_gdf = gpd.read_file(vector_path)
-        
-        # Reproject vector to match raster CRS if needed
-        if vector_gdf.crs != dem.crs:
-            vector_gdf = vector_gdf.to_crs(dem.crs)
+        # Add vector layer boundaries
+        for _, polygon in intersecting_gdf.iterrows():
+            # Extract exterior coordinates of the polygon
+            if polygon.geometry.type == 'Polygon':
+                coords = list(polygon.geometry.exterior.coords)
+            elif polygon.geometry.type == 'MultiPolygon':
+                # For multipolygon, use the first polygon's exterior
+                coords = list(list(polygon.geometry.geoms)[0].exterior.coords)
+            
+            # Get z values for the polygon boundary
+            boundary_z = np.interp(
+                [coord[2] if len(coord) > 2 else dem_array.mean() for coord in coords], 
+                [dem_array.min(), dem_array.max()], 
+                [dem_array.min() * z_scale, dem_array.max() * z_scale]
+            )
+            
+            # Create polygon boundary trace
+            boundary_trace = go.Scatter3d(
+                x=[coord[0] for coord in coords],
+                y=[coord[1] for coord in coords],
+                z=boundary_z,
+                mode='lines',
+                line=dict(color='red', width=2),
+                name='Administrative Boundary'
+            )
+            traces.append(boundary_trace)
         
         # Add min and max elevation points
         for _, row in zonal_results.iterrows():
-            # Get elevation at point (interpolate or use nearest)
-            min_x, min_y = row['min_lon'], row['min_lat']
-            max_x, max_y = row['max_lon'], row['max_lat']
-            
-            # Find the index of the closest pixel
-            min_x_idx = np.argmin(np.abs(x - min_x))
-            min_y_idx = np.argmin(np.abs(y - min_y))
-            max_x_idx = np.argmin(np.abs(x - max_x))
-            max_y_idx = np.argmin(np.abs(y - max_y))
-            
             # Minimum elevation point
             min_trace = go.Scatter3d(
-                x=[min_x], 
-                y=[min_y], 
-                z=[dem_array[min_y_idx, min_x_idx] + 50],  # Slight elevation for visibility
+                x=[row['min_lon']], 
+                y=[row['min_lat']], 
+                z=[np.interp(row['min_elevation'], 
+                             [dem_array.min(), dem_array.max()], 
+                             [dem_array.min() * z_scale, dem_array.max() * z_scale]) + 0.01],
                 mode='markers',
                 marker=dict(
                     size=10,
@@ -186,9 +185,11 @@ def create_3d_visualization(dem_path, vector_path, zonal_results):
             
             # Maximum elevation point
             max_trace = go.Scatter3d(
-                x=[max_x], 
-                y=[max_y], 
-                z=[dem_array[max_y_idx, max_x_idx] + 50],  # Slight elevation for visibility
+                x=[row['max_lon']], 
+                y=[row['max_lat']], 
+                z=[np.interp(row['max_elevation'], 
+                             [dem_array.min(), dem_array.max()], 
+                             [dem_array.min() * z_scale, dem_array.max() * z_scale]) + 0.01],
                 mode='markers',
                 marker=dict(
                     size=10,
@@ -203,18 +204,21 @@ def create_3d_visualization(dem_path, vector_path, zonal_results):
         # Create 3D figure
         fig = go.Figure(data=traces)
         
-        # Update layout
+        # Update layout for full-screen and better view
         fig.update_layout(
             title='3D Terrain Visualization with Elevation Points',
             scene=dict(
                 xaxis_title='Longitude',
                 yaxis_title='Latitude',
-                zaxis_title='Elevation (m)',
+                zaxis_title='Elevation (scaled)',
+                aspectmode='manual',
+                aspectratio=dict(x=1, y=1, z=0.3),  # Flatten z-axis
                 camera=dict(
                     eye=dict(x=1.5, y=1.5, z=1)
                 )
             ),
-            height=800
+            height=900,  # Increased height
+            width=1200,  # Increased width
         )
         
         return fig
@@ -224,9 +228,9 @@ def main():
     
     # GitHub URLs (replace with actual URLs)
     dem_url = st.text_input("Enter DEM File GitHub URL", 
-                            "https://github.com/rk2026/data/raw/main/DHADING_Thakre.tif")
+                            "https://github.com/your_username/repo/raw/main/DHADING_Thakre.tif")
     vector_url = st.text_input("Enter Vector Layer GitHub URL", 
-                               "https://github.com/rk2026/data/raw/main/Bagmati_ward.gpkg")
+                               "https://github.com/your_username/repo/raw/main/Bagmati_ward.gpkg")
     
     if st.button("Process Data"):
         with st.spinner("Processing DEM and Vector Data..."):
@@ -236,7 +240,7 @@ def main():
             
             if dem_file and vector_file:
                 # Process zonal statistics
-                zonal_results = process_dem_zonal_stats(dem_file, vector_file)
+                zonal_results, intersecting_gdf = process_dem_zonal_stats(dem_file, vector_file)
                 
                 # Display results table
                 st.subheader("Zonal Statistics Results")
@@ -253,7 +257,7 @@ def main():
                 st.dataframe(zonal_results[available_columns])
                 
                 # Create 3D visualization
-                fig = create_3d_visualization(dem_file, vector_file, zonal_results)
+                fig = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
                 st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
