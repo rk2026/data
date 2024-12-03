@@ -226,7 +226,7 @@ def main():
     dem_url = st.text_input("Enter DEM File GitHub URL", 
                             "https://github.com/rk2026/data/raw/main/DHADING_Thakre.tif")
     vector_url = st.text_input("Enter Vector Layer GitHub URL", 
-                               "https://github.com/rk2025/data/raw/main/Bagmati_ward.gpkg")
+                               "https://github.com/rk2026/data/raw/main/Bagmati_ward.gpkg")
     
     if st.button("Process Data"):
         with st.spinner("Processing DEM and Vector Data..."):
