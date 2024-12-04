@@ -144,73 +144,73 @@ def fetch_osm_features(dem_path):
             st.warning(f"Could not fetch OSM features: {e}")
             return None
 
-def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
-    """
-    Create enhanced 3D visualization combining DEM, vector layers, and optional OSM features
+# def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
+#     """
+#     Create enhanced 3D visualization combining DEM, vector layers, and optional OSM features
     
-    Returns:
-        Plotly Figure
-    """
-    # Fetch OSM features (if available)
-    osm_features = fetch_osm_features(dem_path) if OSM_AVAILABLE else None
+#     Returns:
+#         Plotly Figure
+#     """
+#     # Fetch OSM features (if available)
+#     osm_features = fetch_osm_features(dem_path) if OSM_AVAILABLE else None
     
-    with rasterio.open(dem_path) as dem:
-        # Read raster data
-        dem_array = dem.read(1)
+#     with rasterio.open(dem_path) as dem:
+#         # Read raster data
+#         dem_array = dem.read(1)
         
-        # Get raster bounds and transform
-        bounds = dem.bounds
+#         # Get raster bounds and transform
+#         bounds = dem.bounds
         
-        # Create x and y coordinates
-        x = np.linspace(bounds.left, bounds.right, dem_array.shape[1])
-        y = np.linspace(bounds.bottom, bounds.top, dem_array.shape[0])
+#         # Create x and y coordinates
+#         x = np.linspace(bounds.left, bounds.right, dem_array.shape[1])
+#         y = np.linspace(bounds.bottom, bounds.top, dem_array.shape[0])
         
-        # Calculate z-scale factor (typically < 1 to avoid vertical exaggeration)
-        elevation_range = dem_array.max() - dem_array.min()
-        lat_range = bounds.top - bounds.bottom
-        lon_range = bounds.right - bounds.left
-        z_scale = min(lat_range, lon_range) / elevation_range * 0.1
+#         # Calculate z-scale factor (typically < 1 to avoid vertical exaggeration)
+#         elevation_range = dem_array.max() - dem_array.min()
+#         lat_range = bounds.top - bounds.bottom
+#         lon_range = bounds.right - bounds.left
+#         z_scale = min(lat_range, lon_range) / elevation_range * 0.1
         
-        # Create 3D surface plot of DEM with adjusted z-scale
-        surface_trace = go.Surface(
-            z=dem_array * z_scale, 
-            x=x, 
-            y=y, 
-            colorscale='Viridis', 
-            showscale=False,
-            name='Terrain Elevation',
-            opacity=0.7
-        )
+#         # Create 3D surface plot of DEM with adjusted z-scale
+#         surface_trace = go.Surface(
+#             z=dem_array * z_scale, 
+#             x=x, 
+#             y=y, 
+#             colorscale='Viridis', 
+#             showscale=False,
+#             name='Terrain Elevation',
+#             opacity=0.7
+#         )
         
-        # Prepare data for traces
-        traces = [surface_trace]
+#         # Prepare data for traces
+#         traces = [surface_trace]
         
-        # Add vector layer boundaries
-        for _, polygon in intersecting_gdf.iterrows():
-            # Extract exterior coordinates of the polygon
-            if polygon.geometry.type == 'Polygon':
-                coords = list(polygon.geometry.exterior.coords)
-            elif polygon.geometry.type == 'MultiPolygon':
-                # For multipolygon, use the first polygon's exterior
-                coords = list(list(polygon.geometry.geoms)[0].exterior.coords)
+#         # Add vector layer boundaries
+#         for _, polygon in intersecting_gdf.iterrows():
+#             # Extract exterior coordinates of the polygon
+#             if polygon.geometry.type == 'Polygon':
+#                 coords = list(polygon.geometry.exterior.coords)
+#             elif polygon.geometry.type == 'MultiPolygon':
+#                 # For multipolygon, use the first polygon's exterior
+#                 coords = list(list(polygon.geometry.geoms)[0].exterior.coords)
             
-            # Get z values for the polygon boundary
-            boundary_z = np.interp(
-                [coord[2] if len(coord) > 2 else dem_array.mean() for coord in coords], 
-                [dem_array.min(), dem_array.max()], 
-                [dem_array.min() * z_scale, dem_array.max() * z_scale]
-            )
+#             # Get z values for the polygon boundary
+#             boundary_z = np.interp(
+#                 [coord[2] if len(coord) > 2 else dem_array.mean() for coord in coords], 
+#                 [dem_array.min(), dem_array.max()], 
+#                 [dem_array.min() * z_scale, dem_array.max() * z_scale]
+#             )
             
-            # Create polygon boundary trace
-            boundary_trace = go.Scatter3d(
-                x=[coord[0] for coord in coords],
-                y=[coord[1] for coord in coords],
-                z=boundary_z,
-                mode='lines',
-                line=dict(color='red', width=2),
-                showlegend=False
-            )
-            traces.append(boundary_trace)
+#             # Create polygon boundary trace
+#             boundary_trace = go.Scatter3d(
+#                 x=[coord[0] for coord in coords],
+#                 y=[coord[1] for coord in coords],
+#                 z=boundary_z,
+#                 mode='lines',
+#                 line=dict(color='red', width=2),
+#                 showlegend=False
+#             )
+#             traces.append(boundary_trace)
         
         # Add OSM Roads if available
         if osm_features and 'roads' in osm_features:
