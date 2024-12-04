@@ -441,8 +441,6 @@ def main():
     
     if st.button("Process Data"):
         with st.spinner(f"Processing {selected_dem}..."):
-            if st.button("Process Data"):
-        with st.spinner(f"Processing {selected_dem}..."):
             # Fetch files
             dem_file = fetch_github_file(dem_url)
             vector_file = fetch_github_file(vector_url)
