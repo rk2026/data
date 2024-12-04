@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.express as px
 import geopandas as gpd
 import rasterio
 import numpy as np
