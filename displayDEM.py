@@ -44,7 +44,7 @@ def process_dem_zonal_stats(dem_path, vector_path):
     Perform zonal statistics on DEM raster within vector polygons
     
     Returns:
-        GeoDataFrame with zonal statistics
+        GeoDataFrame with zonal statistics for intersecting polygons
     """
     # Read the vector layer
     gdf = gpd.read_file(vector_path)
@@ -56,12 +56,13 @@ def process_dem_zonal_stats(dem_path, vector_path):
         if gdf.crs != dem.crs:
             gdf = gdf.to_crs(dem.crs)
         
+        # Strictly filter polygons that intersect with raster bounds
         intersecting_gdf = gdf[gdf.intersects(raster_bounds)]
         
         # Initialize results list
         zonal_results = []
         
-        # Process each polygon
+        # Process each intersecting polygon
         for idx, row in intersecting_gdf.iterrows():
             try:
                 # Create a mask for the current polygon
@@ -144,7 +145,7 @@ def create_2d_map(intersecting_gdf, zonal_results):
                 lon=lons,
                 lat=lats,
                 line=dict(color='red', width=2),
-                name='Ward Boundary'
+                showlegend=False
             )
         )
     
@@ -164,7 +165,7 @@ def create_2d_map(intersecting_gdf, zonal_results):
                 text=f"Minimum Elevation: {row.get('min_elevation', 'N/A')}m<br>"
                      f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
                 hoverinfo='text',
-                name='Minimum Elevation Point'
+                showlegend=False
             )
         )
         
@@ -182,11 +183,11 @@ def create_2d_map(intersecting_gdf, zonal_results):
                 text=f"Maximum Elevation: {row.get('max_elevation', 'N/A')}m<br>"
                      f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
                 hoverinfo='text',
-                name='Maximum Elevation Point'
+                showlegend=False
             )
         )
     
-    # Update layout for OpenStreetMap style
+    # Update layout for OpenStreetMap style with map type toggle
     fig.update_layout(
         mapbox_style="open-street-map",
         mapbox=dict(
@@ -199,8 +200,27 @@ def create_2d_map(intersecting_gdf, zonal_results):
         height=800,
         width=1200,
         title='Maps of Minimum and Maximum Location Elevations',
-        showlegend=True,
-        margin={"r":0,"t":30,"l":0,"b":0}
+        updatemenus=[
+            dict(
+                type="buttons",
+                direction="right",
+                x=0.57,
+                y=1.2,
+                showactive=True,
+                buttons=list([
+                    dict(label="Street Map",
+                         method="relayout",
+                         args=[{"mapbox.style": "open-street-map"}]),
+                    dict(label="Satellite",
+                         method="relayout", 
+                         args=[{"mapbox.style": "satellite-streets"}]),
+                    dict(label="Terrain",
+                         method="relayout", 
+                         args=[{"mapbox.style": "carto-positron"}])
+                ]),
+            )
+        ],
+        margin={"r":0,"t":50,"l":0,"b":0}
     )
     
     return fig
@@ -241,6 +261,10 @@ def main():
                 available_columns = [col for col in display_columns if col in zonal_results.columns]
                 
                 st.dataframe(zonal_results[available_columns])
+                
+                # Verify and display number of intersecting polygons
+                st.write(f"Number of intersecting polygons: {len(intersecting_gdf)}")
+                st.write(f"Number of zonal results: {len(zonal_results)}")
                 
                 # Create and display 2D map
                 fig_2d = create_2d_map(intersecting_gdf, zonal_results)
