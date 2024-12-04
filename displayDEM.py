@@ -340,3 +340,4 @@ def main():
                 folium_static(m)
 
 if __name__ == "__main__":
+    main()
