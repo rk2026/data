@@ -137,7 +137,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         elevation_range = dem_array.max() - dem_array.min()
         lat_range = bounds.top - bounds.bottom
         lon_range = bounds.right - bounds.left
-        z_scale = min(lat_range, lon_range) / elevation_range * 0.1
+        z_scale = min(lat_range, lon_range) / elevation_range * 0.01
         
         # Create 3D surface plot of DEM with adjusted z-scale
         surface_trace = go.Surface(
