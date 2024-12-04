@@ -8,6 +8,7 @@ from rasterio.mask import mask
 import requests
 from io import BytesIO
 import shapely
+from shapely.geometry import Point
 
 # Optional imports with error handling
 try:
@@ -89,6 +90,14 @@ def process_dem_zonal_stats(dem_path, vector_path):
                         min_lon, min_lat = rasterio.transform.xy(out_transform, min_pixel_idx[0], min_pixel_idx[1])
                         max_lon, max_lat = rasterio.transform.xy(out_transform, max_pixel_idx[0], max_pixel_idx[1])
                         
+                        # Create Point geometries for min and max locations
+                        min_point = Point(min_lon, min_lat)
+                        max_point = Point(max_lon, max_lat)
+                        
+                        # Find intersecting polygons for min and max points
+                        min_intersecting_polys = intersecting_gdf[intersecting_gdf.contains(min_point)]
+                        max_intersecting_polys = intersecting_gdf[intersecting_gdf.contains(max_point)]
+                        
                         result_row = {
                             'min_elevation': min_val,
                             'max_elevation': max_val,
@@ -96,9 +105,14 @@ def process_dem_zonal_stats(dem_path, vector_path):
                             'min_lat': min_lat,
                             'max_lon': max_lon,
                             'max_lat': max_lat,
-                            'geometry': row.geometry
+                            'geometry': row.geometry,
+                            'min_point_geometry': min_point,
+                            'max_point_geometry': max_point,
+                            'min_intersecting_polys': min_intersecting_polys,
+                            'max_intersecting_polys': max_intersecting_polys
                         }
                         
+                        # Add attributes from the original polygon
                         additional_attrs = ['DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N']
                         for attr in additional_attrs:
                             if attr in row.index:
@@ -152,6 +166,10 @@ def create_2d_map(intersecting_gdf, zonal_results):
     # Add Minimum and Maximum Elevation Points
     for _, row in zonal_results.iterrows():
         # Minimum Elevation Point
+        # Get the intersecting polygon details for min point
+        min_poly_details = row.get('min_intersecting_polys', [])
+        min_poly_info = min_poly_details.iloc[0] if len(min_poly_details) > 0 else None
+        
         fig.add_trace(
             go.Scattermapbox(
                 mode='markers',
@@ -163,13 +181,18 @@ def create_2d_map(intersecting_gdf, zonal_results):
                     opacity=0.7
                 ),
                 text=f"Minimum Elevation: {row.get('min_elevation', 'N/A')}m<br>"
-                     f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
+                     f"Ward: {min_poly_info.get('NEW_WARD_N', 'N/A') if min_poly_info is not None else 'N/A'}<br>"
+                     f"District: {min_poly_info.get('DISTRICT', 'N/A') if min_poly_info is not None else 'N/A'}",
                 hoverinfo='text',
                 showlegend=False
             )
         )
         
         # Maximum Elevation Point
+        # Get the intersecting polygon details for max point
+        max_poly_details = row.get('max_intersecting_polys', [])
+        max_poly_info = max_poly_details.iloc[0] if len(max_poly_details) > 0 else None
+        
         fig.add_trace(
             go.Scattermapbox(
                 mode='markers',
@@ -181,7 +204,8 @@ def create_2d_map(intersecting_gdf, zonal_results):
                     opacity=0.7
                 ),
                 text=f"Maximum Elevation: {row.get('max_elevation', 'N/A')}m<br>"
-                     f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
+                     f"Ward: {max_poly_info.get('NEW_WARD_N', 'N/A') if max_poly_info is not None else 'N/A'}<br>"
+                     f"District: {max_poly_info.get('DISTRICT', 'N/A') if max_poly_info is not None else 'N/A'}",
                 hoverinfo='text',
                 showlegend=False
             )
@@ -265,8 +289,16 @@ def main():
                 # Verify and display number of intersecting polygons
                 st.write(f"Number of intersecting polygons: {len(intersecting_gdf)}")
                 st.write(f"Number of zonal results: {len(zonal_results)}")
-                st.write(f"zonal results:", zonal_results)
                 
+                # Additional details about point intersections
+                st.write("Minimum Point Intersections:")
+                for idx, row in zonal_results.iterrows():
+                    min_polys = row.get('min_intersecting_polys', [])
+                    max_polys = row.get('max_intersecting_polys', [])
+                    
+                    st.write(f"Result {idx}:")
+                    st.write(f"  Minimum Point Intersecting Polygons: {len(min_polys)}")
+                    st.write(f"  Maximum Point Intersecting Polygons: {len(max_polys)}")
                 
                 # Create and display 2D map
                 fig_2d = create_2d_map(intersecting_gdf, zonal_results)
