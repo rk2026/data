@@ -9,10 +9,13 @@ from streamlit_folium import folium_static
 
 def load_dem_files():
     """
-    Load predefined DEM files from GitHub or local sources
+    Load predefined DEM files from GitHub or local sources'''
+    
     """
+    vector_path = 'https://raw.githubusercontent.com/rk2026/data/main/Bagmati_ward.gpkg'
     dem_files = {
-        'DHADING_Thakre.tif': 'path/to/your/DHADING_Thakre.tif',
+        'DHADING_Thakre.tif': 'https://raw.githubusercontent.com/rk2026/data/main/DHADING_Thakre.tif',
+        'DHADING_Gajuri.tif': 'https://raw.githubusercontent.com/rk2026/data/main/DHADING_Gajuri.tif',
         # Add more predefined DEM files here
     }
     return dem_files
