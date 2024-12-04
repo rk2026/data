@@ -18,16 +18,27 @@ def load_dem_files():
     }
     return dem_files, vector_path
 
-def reproject_vector_to_raster(vector_gdf, raster_path):
+def filter_intersecting_polygons(vector_gdf, raster_path):
     """
-    Reproject vector layer to match the raster's coordinate reference system
+    Filter vector polygons that intersect with the raster extent
     """
+    # Open the raster to get its bounds and CRS
     with rasterio.open(raster_path) as raster_src:
         raster_crs = raster_src.crs
+        raster_bounds = raster_src.bounds
     
-    # Reproject the vector layer to match the raster CRS
-    reprojected_gdf = vector_gdf.to_crs(raster_crs)
-    return reprojected_gdf
+    # Reproject vector layer to match the raster CRS
+    vector_gdf = vector_gdf.to_crs(raster_crs)
+    
+    # Create a bounding box from the raster extent
+    from shapely.geometry import box
+    raster_bbox = box(raster_bounds.left, raster_bounds.bottom, 
+                      raster_bounds.right, raster_bounds.top)
+    
+    # Filter polygons that intersect with the raster extent
+    intersecting_gdf = vector_gdf[vector_gdf.geometry.intersects(raster_bbox)]
+    
+    return intersecting_gdf
 
 def calculate_zonal_statistics(dem_path, vector_path):
     """
@@ -36,8 +47,8 @@ def calculate_zonal_statistics(dem_path, vector_path):
     # Read vector layer
     vector_gdf = gpd.read_file(vector_path)
     
-    # Reproject vector layer to match raster CRS
-    vector_gdf = reproject_vector_to_raster(vector_gdf, dem_path)
+    # Filter polygons that intersect with raster extent
+    vector_gdf = filter_intersecting_polygons(vector_gdf, dem_path)
     
     # Read the raster and vector data
     with rasterio.open(dem_path) as dem_src:
@@ -105,11 +116,29 @@ def create_interactive_map(dem_results, vector_path):
     center_lat = vector_gdf.geometry.centroid.y.mean()
     center_lon = vector_gdf.geometry.centroid.x.mean()
     
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+    # Create map with explicit attribution to resolve the tile warning
+    m = folium.Map(
+        location=[center_lat, center_lon], 
+        zoom_start=10,
+        tiles='OpenStreetMap',
+        attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    )
     
-    # Add base layers (using folium tile layers)
-    folium.TileLayer('OpenStreetMap').add_to(m)
-    folium.TileLayer('Stamen Terrain').add_to(m)
+    # Add additional base layers with explicit attribution
+    folium.TileLayer(
+        tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        name='OpenStreetMap'
+    ).add_to(m)
+    
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        name='Satellite'
+    ).add_to(m)
+    
+    # Add layer control
+    folium.LayerControl().add_to(m)
     
     # Add vector layer with popup
     def style_function(feature):
@@ -193,12 +222,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# requirements.txt:
-# streamlit
-# geopandas
-# rasterio
-# numpy
-# pandas
-# folium
-# streamlit-folium
