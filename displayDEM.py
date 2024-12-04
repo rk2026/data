@@ -9,21 +9,16 @@ from rasterio.mask import mask
 import requests
 from io import BytesIO
 import shapely
-import folium
-from streamlit_folium import folium_static
 
 # List of available DEM files
 DEM_FILES = [
-    'DHADING_Netrawati.tif',
-    'DHADING_Khaniyabash.tif', 
-    'DHADING_Jwalamukhi.tif', 
-    'DHADING_Galchi.tif', 
-    'DHADING_Gajuri.tif', 
-    'DHADING_Dhunibesi.tif', 
-    'DHADING_Benighat_Rorang.tif',
-    'DHADING_Thakre.tif',
-    'DHADING_Siddhalek.tif',
-    'DHADING_Rubi_Valley.tif',
+    'Dhading_Netrawati.tif',
+    'Dhading_Khaniyabash.tif', 
+    'Dhading_Jwalamukhi.tif', 
+    'Dhading_galchhi.tif', 
+    'Dhading_Gajuri.tif', 
+    'Dhading_dhunibesi.tif', 
+    'Dhading_Benighat_Rorang.tif'
 ]
 
 def fetch_github_file(url):
@@ -137,7 +132,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         elevation_range = dem_array.max() - dem_array.min()
         lat_range = bounds.top - bounds.bottom
         lon_range = bounds.right - bounds.left
-        z_scale = min(lat_range, lon_range) / elevation_range * 0.01
+        z_scale = min(lat_range, lon_range) / elevation_range * 0.1
         
         # Create 3D surface plot of DEM with adjusted z-scale
         surface_trace = go.Surface(
@@ -250,68 +245,8 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         return fig
 
-def create_2d_map(zonal_results, intersecting_gdf):
-    """
-    Create a 2D map using Folium with elevation points and intersecting ward boundaries
-    
-    Args:
-        zonal_results (GeoDataFrame): Zonal statistics results
-        intersecting_gdf (GeoDataFrame): Original vector layer with intersecting polygons
-    
-    Returns:
-        folium.Map: Interactive map with elevation points and ward boundaries
-    """
-    # Calculate center point from the data
-    center_lat = zonal_results['min_lat'].mean()
-    center_lon = zonal_results['min_lon'].mean()
-    
-    # Create base map
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
-    
-    # Add ward boundaries for intersecting polygons
-    folium.GeoJson(
-        intersecting_gdf,
-        style_function=lambda x: {
-            'fillColor': 'gray',
-            'color': 'black',
-            'weight': 2,
-            'fillOpacity': 0.1
-        },
-        tooltip=folium.GeoJsonTooltip(
-            fields=['DISTRICT', 'GaPa_NaPa', 'NEW_WARD_N'],
-            aliases=['District:', 'Municipality:', 'Ward:'],
-            style=("background-color: white; color: #333333; font-family: arial; font-size: 12px; padding: 10px;")
-        )
-    ).add_to(m)
-    
-    # Add markers for min and max elevation points
-    for _, row in zonal_results.iterrows():
-        # Minimum elevation marker
-        folium.CircleMarker(
-            location=[row['min_lat'], row['min_lon']],
-            radius=5,
-            popup=f"Minimum Elevation: {row.get('min_elevation', 'N/A')}m<br>"
-                  f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
-            color='blue',
-            fill=True,
-            fillColor='blue'
-        ).add_to(m)
-        
-        # Maximum elevation marker
-        folium.CircleMarker(
-            location=[row['max_lat'], row['max_lon']],
-            radius=5,
-            popup=f"Maximum Elevation: {row.get('max_elevation', 'N/A')}m<br>"
-                  f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
-            color='red',
-            fill=True,
-            fillColor='red'
-        ).add_to(m)
-    
-    return m
-
 def main():
-    st.title("Identify the minimum and maximum height (asl) withing the ward Boundary")
+    st.title("DEM Analysis and 3D Visualization")
     
     # Dropdown for selecting DEM file
     selected_dem = st.selectbox("Select DEM File", DEM_FILES)
@@ -334,7 +269,7 @@ def main():
                 zonal_results, intersecting_gdf = process_dem_zonal_stats(dem_file, vector_file)
                 
                 # Display results table
-                st.subheader(f"Download the table of detailed analysis of ASL with ward wise locations {selected_dem}")
+                st.subheader(f"Zonal Statistics Results for {selected_dem}")
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
@@ -350,11 +285,6 @@ def main():
                 # Create 3D visualization
                 fig = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
                 st.plotly_chart(fig, use_container_width=True)
-                
-                # Create and display 2D map
-                st.subheader("Location of Min and Max height in the ward admin area")
-                m = create_2d_map(zonal_results)
-                folium_static(m)
 
 if __name__ == "__main__":
     main()
