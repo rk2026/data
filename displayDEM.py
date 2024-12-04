@@ -5,6 +5,7 @@ from rasterio.mask import mask
 import numpy as np
 import pandas as pd
 import folium
+from folium import GeoJson
 from streamlit_folium import folium_static
 from shapely.geometry import box
 
@@ -19,31 +20,6 @@ def load_dem_files():
     vector_path = 'https://raw.githubusercontent.com/rk2026/data/main/Bagmati_ward.gpkg'
     return dem_files, vector_path
 
-def filter_intersecting_polygons(vector_gdf, raster_path):
-    """
-    Filter vector polygons that intersect with the raster extent
-    """
-    try:
-        # Open the raster to get its bounds and CRS
-        with rasterio.open(raster_path) as raster_src:
-            raster_crs = raster_src.crs
-            raster_bounds = raster_src.bounds
-        
-        # Reproject vector layer to match the raster CRS
-        vector_gdf = vector_gdf.to_crs(raster_crs)
-        
-        # Create a bounding box from the raster extent
-        raster_bbox = box(raster_bounds.left, raster_bounds.bottom, 
-                          raster_bounds.right, raster_bounds.top)
-        
-        # Filter polygons that intersect with the raster extent
-        intersecting_gdf = vector_gdf[vector_gdf.geometry.intersects(raster_bbox)]
-        
-        return intersecting_gdf
-    except Exception as e:
-        st.error(f"Error filtering intersecting polygons: {e}")
-        return gpd.GeoDataFrame()
-
 def calculate_zonal_statistics(dem_path, vector_path):
     """
     Calculate zonal statistics for each polygon in the vector layer
@@ -51,9 +27,6 @@ def calculate_zonal_statistics(dem_path, vector_path):
     try:
         # Read vector layer
         vector_gdf = gpd.read_file(vector_path)
-        
-        # Filter polygons that intersect with raster extent
-        vector_gdf = filter_intersecting_polygons(vector_gdf, dem_path)
         
         # Read the raster and vector data
         with rasterio.open(dem_path) as dem_src:
@@ -101,65 +74,58 @@ def calculate_zonal_statistics(dem_path, vector_path):
                             'min_lon': min_lon,
                             'min_lat': min_lat,
                             'max_lon': max_lon,
-                            'max_lat': max_lat
+                            'max_lat': max_lat,
+                            'geometry': row.geometry
                         })
                 except Exception as e:
                     st.warning(f"Could not process polygon {index}: {str(e)}")
             
             # Convert results to DataFrame
             results_df = pd.DataFrame(results)
-            return results_df
+            return results_df, vector_gdf
     except Exception as e:
         st.error(f"Error in zonal statistics calculation: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), gpd.GeoDataFrame()
 
-def create_interactive_map(dem_results, vector_path):
+def create_interactive_map(dem_results, vector_gdf):
     """
     Create an interactive map with administrative boundaries and points
     """
     try:
-        # Read vector layer
-        vector_gdf = gpd.read_file(vector_path)
-        
-        # Create a map centered on the mean coordinates of the vector layer
+        # Compute map center
         center_lat = vector_gdf.geometry.centroid.y.mean()
         center_lon = vector_gdf.geometry.centroid.x.mean()
         
-        # Create map with explicit attribution
+        # Create map
         m = folium.Map(
             location=[center_lat, center_lon], 
-            zoom_start=10,
-            tiles='OpenStreetMap',
-            attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            zoom_start=8,
+            tiles='OpenStreetMap'
         )
         
-        # Add additional base layers with explicit attribution
+        # Add basemap layers
         folium.TileLayer(
-            tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            name='OpenStreetMap'
+            tiles='OpenStreetMap',
+            name='OpenStreetMap',
+            attr='OpenStreetMap Contributors'
         ).add_to(m)
         
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-            name='Satellite'
+            attr='Esri',
+            name='Satellite',
+            overlay=False
         ).add_to(m)
         
-        # Add layer control
-        folium.LayerControl().add_to(m)
+        # Add ward boundary layer
+        ward_style = {
+            'fillColor': 'blue',
+            'color': 'black',
+            'weight': 2,
+            'fillOpacity': 0.1
+        }
         
-        # Style function for vector layer
-        def style_function(feature):
-            return {
-                'fillColor': 'blue',
-                'color': 'black',
-                'weight': 1,
-                'fillOpacity': 0.1
-            }
-        
-        # Popup function for vector layer
-        def popup_function(feature):
+        def ward_popup(feature):
             props = feature['properties']
             return folium.Popup(f"""
                 District: {props.get('DISTRICT', 'N/A')}
@@ -167,34 +133,40 @@ def create_interactive_map(dem_results, vector_path):
                 Type: {props.get('Type_GN', 'N/A')}
             """)
         
-        # Add vector layer
-        folium.GeoJson(
-            vector_gdf, 
-            style_function=style_function,
-            popup=popup_function
+        # Add ward boundaries
+        GeoJson(
+            vector_gdf.__geo_interface__,
+            name='Ward Boundaries',
+            style_function=lambda x: ward_style,
+            popup=ward_popup
         ).add_to(m)
         
-        # Add minimum and maximum height points
+        # Add minimum and maximum elevation points
         for idx, row in dem_results.iterrows():
             # Minimum height point
             folium.CircleMarker(
                 location=[row['min_lat'], row['min_lon']],
-                radius=5,
-                popup=f"Minimum Elevation: {row['min_elevation']:.2f}m",
+                radius=6,
+                popup=f"Minimum Elevation: {row['min_elevation']:.2f}m\nWard: {row['NEW_WARD_N']}",
                 color='green',
                 fill=True,
-                fillColor='green'
+                fillColor='green',
+                fillOpacity=0.7
             ).add_to(m)
             
             # Maximum height point
             folium.CircleMarker(
                 location=[row['max_lat'], row['max_lon']],
-                radius=5,
-                popup=f"Maximum Elevation: {row['max_elevation']:.2f}m",
+                radius=6,
+                popup=f"Maximum Elevation: {row['max_elevation']:.2f}m\nWard: {row['NEW_WARD_N']}",
                 color='red',
                 fill=True,
-                fillColor='red'
+                fillColor='red',
+                fillOpacity=0.7
             ).add_to(m)
+        
+        # Add layer control
+        folium.LayerControl().add_to(m)
         
         return m
     except Exception as e:
@@ -238,21 +210,21 @@ def main():
                     dem_path = dem_files[selected_dem]
                 
                 # Calculate zonal statistics
-                dem_results = calculate_zonal_statistics(dem_path, vector_path)
+                dem_results, vector_gdf = calculate_zonal_statistics(dem_path, vector_path)
                 
-                if dem_results is not None and not dem_results.empty:
+                if not dem_results.empty:
                     # Create two columns for display
                     col1, col2 = st.columns(2)
                     
                     # Display results table in the first column
                     with col1:
                         st.subheader("Zonal Statistics Results")
-                        st.dataframe(dem_results)
+                        st.dataframe(dem_results[['DISTRICT', 'GaPa_NaPa', 'NEW_WARD_N', 'min_elevation', 'max_elevation']])
                     
                     # Create interactive map in the second column
                     with col2:
                         st.subheader("Interactive Map")
-                        map_obj = create_interactive_map(dem_results, vector_path)
+                        map_obj = create_interactive_map(dem_results, vector_gdf)
                         if map_obj:
                             folium_static(map_obj)
                         else:
