@@ -265,6 +265,8 @@ def main():
                 # Verify and display number of intersecting polygons
                 st.write(f"Number of intersecting polygons: {len(intersecting_gdf)}")
                 st.write(f"Number of zonal results: {len(zonal_results)}")
+                st.write(f"zonal results: (zonal_results)")
+                
                 
                 # Create and display 2D map
                 fig_2d = create_2d_map(intersecting_gdf, zonal_results)
