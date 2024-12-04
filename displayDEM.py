@@ -294,7 +294,7 @@ def create_2d_map(zonal_results):
     return m
 
 def main():
-    st.title("DEM Analysis and Visualization")
+    st.title("Identify the minimum and maximum height (asl) withing the ward Boundary")
     
     # Dropdown for selecting DEM file
     selected_dem = st.selectbox("Select DEM File", DEM_FILES)
@@ -317,7 +317,7 @@ def main():
                 zonal_results, intersecting_gdf = process_dem_zonal_stats(dem_file, vector_file)
                 
                 # Display results table
-                st.subheader(f"Zonal Statistics Results for {selected_dem}")
+                st.subheader(f"Download the table of detailed analysis of ASL with ward wise locations {selected_dem}")
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
@@ -335,7 +335,7 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Create and display 2D map
-                st.subheader("2D Elevation Map")
+                st.subheader("Location of Min and Max height in the ward admin area")
                 m = create_2d_map(zonal_results)
                 folium_static(m)
 
