@@ -9,8 +9,9 @@ from rasterio.mask import mask
 import requests
 from io import BytesIO
 import shapely
+import osmnx as ox
+import networkx as nx
 
-# List of available DEM files
 DEM_FILES = [
     'DHADING_Netrawati.tif',
     'DHADING_Khaniyabash.tif', 
@@ -25,7 +26,6 @@ DEM_FILES = [
 ]
 
 def fetch_github_file(url):
-    """Fetch file from GitHub URL"""
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -44,16 +44,13 @@ def process_dem_zonal_stats(dem_path, vector_path):
     # Read the vector layer
     gdf = gpd.read_file(vector_path)
     
-    # Read the DEM raster
     with rasterio.open(dem_path) as dem:
-        # Get raster bounds
         raster_bounds = shapely.geometry.box(*dem.bounds)
         
         # Reproject vector to match raster CRS if needed
         if gdf.crs != dem.crs:
             gdf = gdf.to_crs(dem.crs)
         
-        # Filter polygons that intersect with raster bounds
         intersecting_gdf = gdf[gdf.intersects(raster_bounds)]
         
         # Initialize results list
@@ -86,7 +83,6 @@ def process_dem_zonal_stats(dem_path, vector_path):
                         min_lon, min_lat = rasterio.transform.xy(out_transform, min_pixel_idx[0], min_pixel_idx[1])
                         max_lon, max_lat = rasterio.transform.xy(out_transform, max_pixel_idx[0], max_pixel_idx[1])
                         
-                        # Combine zonal results with original polygon attributes
                         result_row = {
                             'min_elevation': min_val,
                             'max_elevation': max_val,
@@ -97,7 +93,6 @@ def process_dem_zonal_stats(dem_path, vector_path):
                             'geometry': row.geometry
                         }
                         
-                        # Add additional attributes from original vector data
                         additional_attrs = ['DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N']
                         for attr in additional_attrs:
                             if attr in row.index:
@@ -112,14 +107,40 @@ def process_dem_zonal_stats(dem_path, vector_path):
         results_gdf = gpd.GeoDataFrame(zonal_results, crs=gdf.crs)
         return results_gdf, intersecting_gdf
 
+def fetch_osm_features(dem_path):
+    """
+    Fetch OpenStreetMap features for the given DEM area
+    
+    Returns:
+        Dictionary of OSM features
+    """
+    with rasterio.open(dem_path) as dem:
+        # Get the bounds of the DEM
+        bounds = dem.bounds
+        
+        # Calculate the center point
+        center_lon = (bounds.left + bounds.right) / 2
+        center_lat = (bounds.bottom + bounds.top) / 2
+        
+        # Define feature types to fetch
+        feature_types = {
+            'roads': ox.graph_from_point((center_lat, center_lon), dist=10000, network_type='all'),
+            'buildings': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'building': True}),
+            'water': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'natural': 'water'}),
+        }
+        
+        return feature_types
+
 def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
     """
-    Create enhanced 3D visualization combining DEM and vector layers
+    Create enhanced 3D visualization combining DEM, vector layers, and OSM features
     
     Returns:
         Plotly Figure
     """
-    # Read the DEM raster
+    # Fetch OSM features
+    osm_features = fetch_osm_features(dem_path)
+    
     with rasterio.open(dem_path) as dem:
         # Read raster data
         dem_array = dem.read(1)
@@ -143,7 +164,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
             x=x, 
             y=y, 
             colorscale='Viridis', 
-            showscale=False,  # Remove color scale legend
+            showscale=False,
             name='Terrain Elevation',
             opacity=0.7
         )
@@ -177,6 +198,58 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
                 showlegend=False
             )
             traces.append(boundary_trace)
+        
+        # Add OSM Roads
+        road_graph = osm_features['roads']
+        for u, v, data in road_graph.edges(data=True):
+            road_trace = go.Scatter3d(
+                x=[road_graph.nodes[u]['x'], road_graph.nodes[v]['x']],
+                y=[road_graph.nodes[u]['y'], road_graph.nodes[v]['y']],
+                z=[
+                    np.interp(road_graph.nodes[u]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[u]['x']))]) * z_scale,
+                    np.interp(road_graph.nodes[v]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[v]['x']))]) * z_scale
+                ],
+                mode='lines',
+                line=dict(color='yellow', width=3),
+                showlegend=False
+            )
+            traces.append(road_trace)
+        
+        # Add OSM Buildings (simplified representation)
+        buildings = osm_features['buildings']
+        for _, building in buildings.iterrows():
+            if building.geometry.type in ['Polygon', 'MultiPolygon']:
+                # Simplified building representation
+                if building.geometry.type == 'Polygon':
+                    coords = list(building.geometry.exterior.coords)
+                else:
+                    # For MultiPolygon, use the first polygon's exterior
+                    coords = list(list(building.geometry.geoms)[0].exterior.coords)
+                
+                # Approximate building height (simplified)
+                building_height = 10 * z_scale  # Simplified height
+                
+                # Create building base
+                building_base_trace = go.Scatter3d(
+                    x=[coord[0] for coord in coords],
+                    y=[coord[1] for coord in coords],
+                    z=[np.interp(coord[1], y, dem_array[:, np.argmin(np.abs(x - coord[0]))]) * z_scale] * len(coords),
+                    mode='lines',
+                    line=dict(color='gray', width=2),
+                    showlegend=False
+                )
+                
+                # Create building top
+                building_top_trace = go.Scatter3d(
+                    x=[coord[0] for coord in coords],
+                    y=[coord[1] for coord in coords],
+                    z=[np.interp(coord[1], y, dem_array[:, np.argmin(np.abs(x - coord[0]))]) * z_scale + building_height] * len(coords),
+                    mode='lines',
+                    line=dict(color='gray', width=2),
+                    showlegend=False
+                )
+                
+                traces.extend([building_base_trace, building_top_trace])
         
         # Add min and max elevation points with draped positioning
         for _, row in zonal_results.iterrows():
@@ -229,27 +302,27 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         # Update layout for full-screen and better view
         fig.update_layout(
-            title='3D Terrain Visualization',
+            title='3D Terrain Visualization with OSM Features',
             scene=dict(
                 xaxis_title='Longitude',
                 yaxis_title='Latitude',
                 zaxis_title='Elevation (scaled)',
                 aspectmode='manual',
-                aspectratio=dict(x=1, y=1, z=0.3),  # Flatten z-axis
+                aspectratio=dict(x=1, y=1, z=0.3),
                 camera=dict(
                     eye=dict(x=1.5, y=1.5, z=1)
                 )
             ),
-            height=900,  # Increased height
-            width=1600,  # Significantly increased width
-            margin=dict(l=0, r=0, t=30, b=0),  # Reduced margins
-            showlegend=False  # Remove legend completely
+            height=900,
+            width=1600,
+            margin=dict(l=0, r=0, t=30, b=0),
+            showlegend=False
         )
         
         return fig
 
 def main():
-    st.title("DEM Analysis and 3D Visualization")
+    st.title("DEM Analysis and 3D Visualization with OpenStreetMap")
     
     # Dropdown for selecting DEM file
     selected_dem = st.selectbox("Select DEM File", DEM_FILES)
@@ -276,22 +349,4 @@ def main():
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
-                    'min_elevation', 'max_elevation', 
-                    'min_lon', 'min_lat', 'max_lon', 'max_lat'
-                ]
-                
-                # Filter columns that exist in the results
-                available_columns = [col for col in display_columns if col in zonal_results.columns]
-                
-                st.dataframe(zonal_results[available_columns])
-                
-                # Create 3D visualization
-                fig = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
-                st.plotly_chart(fig, use_container_width=True)
-
-                
-if __name__ == "__main__":
-    main()
-
-
-
+                    'min_elevation', 'max_elevation',
