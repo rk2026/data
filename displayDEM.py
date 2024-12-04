@@ -250,15 +250,16 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         return fig
 
-def create_2d_map(zonal_results):
+def create_2d_map(zonal_results, intersecting_gdf):
     """
-    Create a 2D map using Folium with elevation points
+    Create a 2D map using Folium with elevation points and intersecting ward boundaries
     
     Args:
         zonal_results (GeoDataFrame): Zonal statistics results
+        intersecting_gdf (GeoDataFrame): Original vector layer with intersecting polygons
     
     Returns:
-        folium.Map: Interactive map with elevation points
+        folium.Map: Interactive map with elevation points and ward boundaries
     """
     # Calculate center point from the data
     center_lat = zonal_results['min_lat'].mean()
@@ -266,6 +267,22 @@ def create_2d_map(zonal_results):
     
     # Create base map
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+    
+    # Add ward boundaries for intersecting polygons
+    folium.GeoJson(
+        intersecting_gdf,
+        style_function=lambda x: {
+            'fillColor': 'gray',
+            'color': 'black',
+            'weight': 2,
+            'fillOpacity': 0.1
+        },
+        tooltip=folium.GeoJsonTooltip(
+            fields=['DISTRICT', 'GaPa_NaPa', 'NEW_WARD_N'],
+            aliases=['District:', 'Municipality:', 'Ward:'],
+            style=("background-color: white; color: #333333; font-family: arial; font-size: 12px; padding: 10px;")
+        )
+    ).add_to(m)
     
     # Add markers for min and max elevation points
     for _, row in zonal_results.iterrows():
