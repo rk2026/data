@@ -316,91 +316,94 @@ def create_2d_map(dem_path, vector_path, zonal_results, osm_features=None):
         bounds = dem.bounds
         
         # Calculate center of the map
-        center_lat = (bounds.bottom + bounds.top) / 2
         center_lon = (bounds.left + bounds.right) / 2
+        center_lat = (bounds.bottom + bounds.top) / 2
         
         # Create base map with OpenStreetMap
-        fig = go.Figure(go.Scattermapbox(
-            mode="lines",
-            lon=[center_lon],
-            lat=[center_lat],
-            showlegend=False
+        fig = go.Figure(go.Choroplethmapbox(
+            geojson=gdf.__geo_interface__,
+            locations=gdf.index,
+            z=[1]*len(gdf),  # Dummy values for coloring
+            colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+            marker_opacity=0,
+            showscale=False
         ))
         
         # Add DEM as an image overlay with 50% transparency
-        fig.add_trace(go.Scattermapbox(
-            mode="lines",
-            lon=[bounds.left, bounds.right, bounds.right, bounds.left, bounds.left],
-            lat=[bounds.bottom, bounds.bottom, bounds.top, bounds.top, bounds.bottom],
-            fill="toself",
-            fillcolor=f'rgba(0,0,0,0.5)',
-            line=dict(color='rgba(0,0,0,0)'),
-            showlegend=False
-        ))
+        fig.add_trace(
+            go.Scattermapbox(
+                mode='markers',
+                lon=[center_lon],
+                lat=[center_lat],
+                marker=dict(
+                    size=1,
+                    color='rgba(0,0,0,0)'
+                ),
+                showlegend=False
+            )
+        )
         
         # Add Ward Boundaries
         for _, polygon in gdf.iterrows():
-            # Handle both Polygon and MultiPolygon
             if polygon.geometry.type == 'Polygon':
                 coords = list(polygon.geometry.exterior.coords)
+                lons = [coord[0] for coord in coords]
+                lats = [coord[1] for coord in coords]
             elif polygon.geometry.type == 'MultiPolygon':
+                # For multipolygon, use the first polygon's exterior
                 coords = list(list(polygon.geometry.geoms)[0].exterior.coords)
+                lons = [coord[0] for coord in coords]
+                lats = [coord[1] for coord in coords]
             
-            fig.add_trace(go.Scattermapbox(
-                mode="lines",
-                lon=[coord[0] for coord in coords],
-                lat=[coord[1] for coord in coords],
-                line=dict(color='red', width=2),
-                name='Ward Boundary'
-            ))
+            fig.add_trace(
+                go.Scattermapbox(
+                    mode='lines',
+                    lon=lons,
+                    lat=lats,
+                    line=dict(color='red', width=2),
+                    name='Ward Boundary'
+                )
+            )
         
-        # Add Minimum DEM Value Points
+        # Add Minimum and Maximum Elevation Points
         for _, row in zonal_results.iterrows():
-            # Minimum elevation point
-            fig.add_trace(go.Scattermapbox(
-                mode="markers",
-                lon=[row['min_lon']],
-                lat=[row['min_lat']],
-                marker=dict(
-                    size=10,
-                    color='blue',
-                    opacity=0.8
-                ),
-                text=f"Min Elevation: {row.get('min_elevation', 'N/A')}m<br>"
-                     f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
-                hoverinfo='text',
-                name='Minimum Elevation'
-            ))
+            # Minimum Elevation Point
+            fig.add_trace(
+                go.Scattermapbox(
+                    mode='markers',
+                    lon=[row['min_lon']],
+                    lat=[row['min_lat']],
+                    marker=dict(
+                        size=10,
+                        color='blue',
+                        opacity=0.7
+                    ),
+                    text=f"Minimum Elevation: {row.get('min_elevation', 'N/A')}m<br>"
+                         f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
+                    hoverinfo='text',
+                    name='Minimum Elevation Point'
+                )
+            )
             
-            # Maximum elevation point
-            fig.add_trace(go.Scattermapbox(
-                mode="markers",
-                lon=[row['max_lon']],
-                lat=[row['max_lat']],
-                marker=dict(
-                    size=10,
-                    color='red',
-                    opacity=0.8
-                ),
-                text=f"Max Elevation: {row.get('max_elevation', 'N/A')}m<br>"
-                     f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
-                hoverinfo='text',
-                name='Maximum Elevation'
-            ))
+            # Maximum Elevation Point
+            fig.add_trace(
+                go.Scattermapbox(
+                    mode='markers',
+                    lon=[row['max_lon']],
+                    lat=[row['max_lat']],
+                    marker=dict(
+                        size=10,
+                        color='red',
+                        opacity=0.7
+                    ),
+                    text=f"Maximum Elevation: {row.get('max_elevation', 'N/A')}m<br>"
+                         f"Ward: {row.get('NEW_WARD_N', 'N/A')}",
+                    hoverinfo='text',
+                    name='Maximum Elevation Point'
+                )
+            )
         
-        # Add OSM Roads if available
-        if osm_features and 'roads' in osm_features:
-            road_graph = osm_features['roads']
-            for u, v, data in road_graph.edges(data=True):
-                fig.add_trace(go.Scattermapbox(
-                    mode="lines",
-                    lon=[road_graph.nodes[u]['x'], road_graph.nodes[v]['x']],
-                    lat=[road_graph.nodes[u]['y'], road_graph.nodes[v]['y']],
-                    line=dict(color='yellow', width=2),
-                    name='Roads'
-                ))
-        
-        # Update layout for map visualization
+        # Update layout for OpenStreetMap style
         fig.update_layout(
             mapbox_style="open-street-map",
             mapbox=dict(
@@ -413,12 +416,13 @@ def create_2d_map(dem_path, vector_path, zonal_results, osm_features=None):
             height=800,
             width=1200,
             title='Maps of Minimum and Maximum Location and their Above Sea Level Height (m)',
-            margin={"r":0,"t":30,"l":0,"b":0},
-            showlegend=False
+            showlegend=False,
+            margin={"r":0,"t":30,"l":0,"b":0}
         )
         
         return fig
 
+# Update the main() function to pass zonal_results to create_2d_map()
 def main():
     st.title("DEM Analysis and Visualization")
     
@@ -433,8 +437,11 @@ def main():
     
     # Fixed Vector Layer URL (assuming it remains the same)
     vector_url = base_url + "Bagmati_ward.gpkg"
+    # ... [previous code remains the same]
     
     if st.button("Process Data"):
+        with st.spinner(f"Processing {selected_dem}..."):
+            if st.button("Process Data"):
         with st.spinner(f"Processing {selected_dem}..."):
             # Fetch files
             dem_file = fetch_github_file(dem_url)
@@ -464,10 +471,10 @@ def main():
                 
                 # Fetch OSM features for 2D map (optional)
                 osm_features = fetch_osm_features(dem_file) if OSM_AVAILABLE else None
-                
-                # Create 2D visualization
-                fig_2d = create_2d_map(dem_file, vector_file, osm_features)
-                st.plotly_chart(fig_2d, use_container_width=True)
+            
+            # Create 2D visualization
+            fig_2d = create_2d_map(dem_file, vector_file, zonal_results, osm_features)
+            st.plotly_chart(fig_2d, use_container_width=True)
 
 if __name__ == "__main__":
     main()
