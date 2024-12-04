@@ -4,14 +4,15 @@ import rasterio
 from rasterio.mask import mask
 import numpy as np
 import pandas as pd
-import leafmap.folium as leafmap
+import folium
+from streamlit_folium import folium_static
 
 def load_dem_files():
     """
     Load predefined DEM files from GitHub or local sources
     """
     dem_files = {
-        'DHADING_Thakre.tif': 'https://github.com/your-repo/DHADING_Thakre.tif',
+        'DHADING_Thakre.tif': 'path/to/your/DHADING_Thakre.tif',
         # Add more predefined DEM files here
     }
     return dem_files
@@ -74,45 +75,71 @@ def calculate_zonal_statistics(dem_path, vector_path):
                     'max_lat': max_lat
                 })
         
-        # Convert results to GeoDataFrame
-        results_df = gpd.GeoDataFrame(results)
+        # Convert results to DataFrame
+        results_df = pd.DataFrame(results)
         return results_df
 
 def create_interactive_map(dem_results, vector_path):
     """
-    Create an interactive map with DEM and administrative boundaries
+    Create an interactive map with administrative boundaries and points
     """
-    m = leafmap.Map(center=[27.7172, 85.3240], zoom=10)
-    
-    # Add base layers
-    m.add_basemap('ESRI.WorldImagery')
-    m.add_basemap('OpenStreetMap')
-    
-    # Add DEM layer (if possible)
-    # m.add_raster(dem_path, colormap='terrain', layer_name='DEM')
-    
-    # Add minimum and maximum height points
-    min_points = gpd.GeoDataFrame(
-        dem_results, 
-        geometry=gpd.points_from_xy(
-            dem_results['min_lon'], 
-            dem_results['min_lat']
-        )
-    )
-    max_points = gpd.GeoDataFrame(
-        dem_results, 
-        geometry=gpd.points_from_xy(
-            dem_results['max_lon'], 
-            dem_results['max_lat']
-        )
-    )
-    
-    # Add vector layer
+    # Read vector layer
     vector_gdf = gpd.read_file(vector_path)
     
-    m.add_gdf(vector_gdf, layer_name='Administrative Boundaries')
-    m.add_gdf(min_points, layer_name='Minimum Height Points')
-    m.add_gdf(max_points, layer_name='Maximum Height Points')
+    # Create a map centered on the mean coordinates of the vector layer
+    center_lat = vector_gdf.geometry.centroid.y.mean()
+    center_lon = vector_gdf.geometry.centroid.x.mean()
+    
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+    
+    # Add base layers (using folium tile layers)
+    folium.TileLayer('OpenStreetMap').add_to(m)
+    folium.TileLayer('Stamen Terrain').add_to(m)
+    
+    # Add vector layer with popup
+    def style_function(feature):
+        return {
+            'fillColor': 'blue',
+            'color': 'black',
+            'weight': 1,
+            'fillOpacity': 0.1
+        }
+    
+    def popup_function(feature):
+        props = feature['properties']
+        return folium.Popup(f"""
+            District: {props['DISTRICT']}
+            Ward: {props['NEW_WARD_N']}
+            Type: {props['Type_GN']}
+        """)
+    
+    folium.GeoJson(
+        vector_gdf, 
+        style_function=style_function,
+        popup=popup_function
+    ).add_to(m)
+    
+    # Add minimum height points
+    for idx, row in dem_results.iterrows():
+        # Minimum height point
+        folium.CircleMarker(
+            location=[row['min_lat'], row['min_lon']],
+            radius=5,
+            popup=f"Minimum Elevation: {row['min_elevation']:.2f}",
+            color='green',
+            fill=True,
+            fillColor='green'
+        ).add_to(m)
+        
+        # Maximum height point
+        folium.CircleMarker(
+            location=[row['max_lat'], row['max_lon']],
+            radius=5,
+            popup=f"Maximum Elevation: {row['max_elevation']:.2f}",
+            color='red',
+            fill=True,
+            fillColor='red'
+        ).add_to(m)
     
     return m
 
@@ -135,26 +162,31 @@ def main():
     # Process data
     if st.sidebar.button('Analyze DEM'):
         with st.spinner('Processing DEM and calculating zonal statistics...'):
-            # Calculate zonal statistics
-            dem_results = calculate_zonal_statistics(
-                dem_files[selected_dem], 
-                vector_path
-            )
-            
-            # Display results table
-            st.dataframe(dem_results)
-            
-            # Create interactive map
-            map_obj = create_interactive_map(dem_results, vector_path)
-            map_obj.to_streamlit(height=600)
+            try:
+                # Calculate zonal statistics
+                dem_results = calculate_zonal_statistics(
+                    selected_dem, 
+                    vector_path
+                )
+                
+                # Display results table
+                st.dataframe(dem_results)
+                
+                # Create interactive map
+                map_obj = create_interactive_map(dem_results, vector_path)
+                folium_static(map_obj)
+                
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
     main()
 
-# Requirements (requirements.txt):
+# requirements.txt:
 # streamlit
 # geopandas
 # rasterio
 # numpy
 # pandas
-# leafmap
+# folium
+# streamlit-folium
