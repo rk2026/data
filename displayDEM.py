@@ -349,4 +349,4 @@ def main():
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
-                    'min_elevation', 'max_elevation',
+                    'min_elevation', 'max_elevation',]
