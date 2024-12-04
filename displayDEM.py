@@ -12,13 +12,17 @@ import shapely
 
 # List of available DEM files
 DEM_FILES = [
-    'Dhading_Netrawati.tif',
-    'Dhading_Khaniyabash.tif', 
-    'Dhading_Jwalamukhi.tif', 
-    'Dhading_galchhi.tif', 
-    'Dhading_Gajuri.tif', 
-    'Dhading_dhunibesi.tif', 
-    'Dhading_Benighat_Rorang.tif'
+    'DHADING_Netrawati.tif',
+    'DHADING_Khaniyabash.tif', 
+    'DHADING_Jwalamukhi.tif', 
+    'DHADING_Galchi.tif', 
+    'DHADING_Gajuri.tif', 
+    'DHADING_Dhunibesi.tif', 
+    'DHADING_Benighat_Rorang.tif'
+    'DHADING_Thakre.tif'
+    'DHADING_Siddhalek.tif'
+    'DHADING_Rubi_Valley.tif'
+    'DHADING_Gangajamuna.tif'
 ]
 
 def fetch_github_file(url):
