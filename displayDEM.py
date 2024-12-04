@@ -2,15 +2,20 @@ import streamlit as st
 import geopandas as gpd
 import rasterio
 import numpy as np
-import pandas as pd
-import plotly.express as px
 import plotly.graph_objs as go
 from rasterio.mask import mask
 import requests
 from io import BytesIO
 import shapely
-import osmnx as ox
-import networkx as nx
+
+# Optional imports with error handling
+try:
+    import osmnx as ox
+    import networkx as nx
+    OSM_AVAILABLE = True
+except ImportError:
+    st.warning("OpenStreetMap (osmnx) libraries not installed. OSM features will be disabled.")
+    OSM_AVAILABLE = False
 
 DEM_FILES = [
     'DHADING_Netrawati.tif',
@@ -112,8 +117,11 @@ def fetch_osm_features(dem_path):
     Fetch OpenStreetMap features for the given DEM area
     
     Returns:
-        Dictionary of OSM features
+        Dictionary of OSM features or None if not available
     """
+    if not OSM_AVAILABLE:
+        return None
+    
     with rasterio.open(dem_path) as dem:
         # Get the bounds of the DEM
         bounds = dem.bounds
@@ -122,24 +130,28 @@ def fetch_osm_features(dem_path):
         center_lon = (bounds.left + bounds.right) / 2
         center_lat = (bounds.bottom + bounds.top) / 2
         
-        # Define feature types to fetch
-        feature_types = {
-            'roads': ox.graph_from_point((center_lat, center_lon), dist=10000, network_type='all'),
-            'buildings': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'building': True}),
-            'water': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'natural': 'water'}),
-        }
-        
-        return feature_types
+        try:
+            # Define feature types to fetch
+            feature_types = {
+                'roads': ox.graph_from_point((center_lat, center_lon), dist=10000, network_type='all'),
+                'buildings': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'building': True}),
+                'water': ox.geometries_from_point((center_lat, center_lon), dist=10000, tags={'natural': 'water'}),
+            }
+            
+            return feature_types
+        except Exception as e:
+            st.warning(f"Could not fetch OSM features: {e}")
+            return None
 
 def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
     """
-    Create enhanced 3D visualization combining DEM, vector layers, and OSM features
+    Create enhanced 3D visualization combining DEM, vector layers, and optional OSM features
     
     Returns:
         Plotly Figure
     """
-    # Fetch OSM features
-    osm_features = fetch_osm_features(dem_path)
+    # Fetch OSM features (if available)
+    osm_features = fetch_osm_features(dem_path) if OSM_AVAILABLE else None
     
     with rasterio.open(dem_path) as dem:
         # Read raster data
@@ -199,57 +211,22 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
             )
             traces.append(boundary_trace)
         
-        # Add OSM Roads
-        road_graph = osm_features['roads']
-        for u, v, data in road_graph.edges(data=True):
-            road_trace = go.Scatter3d(
-                x=[road_graph.nodes[u]['x'], road_graph.nodes[v]['x']],
-                y=[road_graph.nodes[u]['y'], road_graph.nodes[v]['y']],
-                z=[
-                    np.interp(road_graph.nodes[u]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[u]['x']))]) * z_scale,
-                    np.interp(road_graph.nodes[v]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[v]['x']))]) * z_scale
-                ],
-                mode='lines',
-                line=dict(color='yellow', width=3),
-                showlegend=False
-            )
-            traces.append(road_trace)
-        
-        # Add OSM Buildings (simplified representation)
-        buildings = osm_features['buildings']
-        for _, building in buildings.iterrows():
-            if building.geometry.type in ['Polygon', 'MultiPolygon']:
-                # Simplified building representation
-                if building.geometry.type == 'Polygon':
-                    coords = list(building.geometry.exterior.coords)
-                else:
-                    # For MultiPolygon, use the first polygon's exterior
-                    coords = list(list(building.geometry.geoms)[0].exterior.coords)
-                
-                # Approximate building height (simplified)
-                building_height = 10 * z_scale  # Simplified height
-                
-                # Create building base
-                building_base_trace = go.Scatter3d(
-                    x=[coord[0] for coord in coords],
-                    y=[coord[1] for coord in coords],
-                    z=[np.interp(coord[1], y, dem_array[:, np.argmin(np.abs(x - coord[0]))]) * z_scale] * len(coords),
+        # Add OSM Roads if available
+        if osm_features and 'roads' in osm_features:
+            road_graph = osm_features['roads']
+            for u, v, data in road_graph.edges(data=True):
+                road_trace = go.Scatter3d(
+                    x=[road_graph.nodes[u]['x'], road_graph.nodes[v]['x']],
+                    y=[road_graph.nodes[u]['y'], road_graph.nodes[v]['y']],
+                    z=[
+                        np.interp(road_graph.nodes[u]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[u]['x']))]) * z_scale,
+                        np.interp(road_graph.nodes[v]['y'], y, dem_array[:, np.argmin(np.abs(x - road_graph.nodes[v]['x']))]) * z_scale
+                    ],
                     mode='lines',
-                    line=dict(color='gray', width=2),
+                    line=dict(color='yellow', width=3),
                     showlegend=False
                 )
-                
-                # Create building top
-                building_top_trace = go.Scatter3d(
-                    x=[coord[0] for coord in coords],
-                    y=[coord[1] for coord in coords],
-                    z=[np.interp(coord[1], y, dem_array[:, np.argmin(np.abs(x - coord[0]))]) * z_scale + building_height] * len(coords),
-                    mode='lines',
-                    line=dict(color='gray', width=2),
-                    showlegend=False
-                )
-                
-                traces.extend([building_base_trace, building_top_trace])
+                traces.append(road_trace)
         
         # Add min and max elevation points with draped positioning
         for _, row in zonal_results.iterrows():
@@ -302,7 +279,7 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         # Update layout for full-screen and better view
         fig.update_layout(
-            title='3D Terrain Visualization with OSM Features',
+            title='3D Terrain Visualization',
             scene=dict(
                 xaxis_title='Longitude',
                 yaxis_title='Latitude',
@@ -322,7 +299,16 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         return fig
 
 def main():
-    st.title("DEM Analysis and 3D Visualization with OpenStreetMap")
+    st.title("DEM Analysis and 3D Visualization")
+    
+    # Check and guide for OSM libraries installation
+    if not OSM_AVAILABLE:
+        st.warning("""
+        OpenStreetMap features are disabled. To enable them:
+        1. Open a terminal/command prompt
+        2. Run: `pip install osmnx networkx`
+        3. Restart your Streamlit application
+        """)
     
     # Dropdown for selecting DEM file
     selected_dem = st.selectbox("Select DEM File", DEM_FILES)
@@ -349,4 +335,18 @@ def main():
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
-                    'min_elevation', 'max_elevation',]
+                    'min_elevation', 'max_elevation', 
+                    'min_lon', 'min_lat', 'max_lon', 'max_lat'
+                ]
+                
+                # Filter columns that exist in the results
+                available_columns = [col for col in display_columns if col in zonal_results.columns]
+                
+                st.dataframe(zonal_results[available_columns])
+                
+                # Create 3D visualization
+                fig = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
+                st.plotly_chart(fig, use_container_width=True)
+
+if __name__ == "__main__":
+    main()
