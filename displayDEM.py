@@ -32,6 +32,15 @@ DEM_FILES = [
 ]
 
 def fetch_github_file(url):
+    """
+    Fetch a file from a GitHub URL
+    
+    Args:
+        url (str): URL of the file to fetch
+    
+    Returns:
+        BytesIO object or None
+    """
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -40,7 +49,92 @@ def fetch_github_file(url):
         st.error(f"Error fetching file: {e}")
         return None
 
-# ... [previous functions remain the same] ...
+def process_dem_zonal_stats(dem_path, vector_path):
+    """
+    Perform zonal statistics on DEM raster within vector polygons
+    
+    Returns:
+        GeoDataFrame with zonal statistics for intersecting polygons
+    """
+    # Read the vector layer
+    gdf = gpd.read_file(vector_path)
+    
+    with rasterio.open(dem_path) as dem:
+        raster_bounds = shapely.geometry.box(*dem.bounds)
+        
+        # Reproject vector to match raster CRS if needed
+        if gdf.crs != dem.crs:
+            gdf = gdf.to_crs(dem.crs)
+        
+        # Strictly filter polygons that intersect with raster bounds
+        intersecting_gdf = gdf[gdf.intersects(raster_bounds)]
+        
+        # Initialize results list
+        zonal_results = []
+        
+        # Process each intersecting polygon
+        for idx, row in intersecting_gdf.iterrows():
+            try:
+                # Create a mask for the current polygon
+                mask_geometry = [row.geometry]
+                
+                # Clip raster to polygon
+                out_image, out_transform = mask(dem, mask_geometry, crop=True)
+                
+                # Flatten and remove nodata values
+                valid_pixels = out_image[out_image != dem.nodata]
+                
+                if len(valid_pixels) > 0:
+                    # Calculate zonal statistics
+                    min_val = float(np.min(valid_pixels))
+                    max_val = float(np.max(valid_pixels))
+                    
+                    # Only include if at least one value is > 0
+                    if max_val > 0:
+                        # Find pixel locations for min and max
+                        min_pixel_idx = np.unravel_index(np.argmin(out_image), out_image.shape)
+                        max_pixel_idx = np.unravel_index(np.argmax(out_image), out_image.shape)
+                        
+                        # Convert pixel indices to geospatial coordinates
+                        min_lon, min_lat = rasterio.transform.xy(out_transform, min_pixel_idx[0], min_pixel_idx[1])
+                        max_lon, max_lat = rasterio.transform.xy(out_transform, max_pixel_idx[0], max_pixel_idx[1])
+                        
+                        # Create Point geometries for min and max locations
+                        min_point = Point(min_lon, min_lat)
+                        max_point = Point(max_lon, max_lat)
+                        
+                        # Find intersecting polygons for min and max points
+                        min_intersecting_polys = intersecting_gdf[intersecting_gdf.contains(min_point)]
+                        max_intersecting_polys = intersecting_gdf[intersecting_gdf.contains(max_point)]
+                        
+                        result_row = {
+                            'min_elevation': min_val,
+                            'max_elevation': max_val,
+                            'min_lon': min_lon,
+                            'min_lat': min_lat,
+                            'max_lon': max_lon,
+                            'max_lat': max_lat,
+                            'geometry': row.geometry,
+                            'min_point_geometry': min_point,
+                            'max_point_geometry': max_point,
+                            'min_intersecting_polys': min_intersecting_polys,
+                            'max_intersecting_polys': max_intersecting_polys
+                        }
+                        
+                        # Add attributes from the original polygon
+                        additional_attrs = ['DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N']
+                        for attr in additional_attrs:
+                            if attr in row.index:
+                                result_row[attr] = row[attr]
+                        
+                        zonal_results.append(result_row)
+            
+            except Exception as e:
+                st.warning(f"Could not process polygon: {e}")
+        
+        # Create GeoDataFrame from results
+        results_gdf = gpd.GeoDataFrame(zonal_results, crs=gdf.crs)
+        return results_gdf, intersecting_gdf
 
 def create_2d_map(intersecting_gdf, zonal_results):
     """
@@ -186,8 +280,6 @@ def create_2d_map(intersecting_gdf, zonal_results):
     )
     
     return fig
-
-# ... [rest of the code remains the same] ...
 
 def main():
     st.title("DEM Analysis and Visualization")
