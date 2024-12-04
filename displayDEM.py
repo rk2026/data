@@ -298,17 +298,79 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
         
         return fig
 
-def main():
-    st.title("DEM Analysis and 3D Visualization")
+def create_2d_map(dem_path, vector_path, osm_features=None):
+    """
+    Create a 2D map visualization combining DEM, vector layers, and optional OSM features
     
-    # Check and guide for OSM libraries installation
-    if not OSM_AVAILABLE:
-        st.warning("""
-        OpenStreetMap features are disabled. To enable them:
-        1. Open a terminal/command prompt
-        2. Run: `pip install osmnx networkx`
-        3. Restart your Streamlit application
-        """)
+    Returns:
+        Plotly Figure
+    """
+    # Read the vector layer
+    gdf = gpd.read_file(vector_path)
+    
+    with rasterio.open(dem_path) as dem:
+        # Read raster data
+        dem_array = dem.read(1)
+        bounds = dem.bounds
+        
+        # Create base map with terrain elevation
+        fig = px.imshow(
+            dem_array, 
+            origin='lower', 
+            color_continuous_scale='Viridis',
+            labels={'color': 'Elevation (m)'},
+            title='2D Terrain Elevation Map'
+        )
+        
+        # Add vector layer boundaries
+        for _, polygon in gdf.iterrows():
+            # Extract polygon coordinates
+            if polygon.geometry.type == 'Polygon':
+                coords = list(polygon.geometry.exterior.coords)
+            elif polygon.geometry.type == 'MultiPolygon':
+                # For multipolygon, use the first polygon's exterior
+                coords = list(list(polygon.geometry.geoms)[0].exterior.coords)
+            
+            # Add polygon boundary
+            fig.add_trace(
+                go.Scatter(
+                    x=[coord[0] for coord in coords],
+                    y=[coord[1] for coord in coords],
+                    mode='lines',
+                    line=dict(color='red', width=2),
+                    name='Ward Boundary'
+                )
+            )
+        
+        # Add OSM Roads if available
+        if osm_features and 'roads' in osm_features:
+            road_graph = osm_features['roads']
+            for u, v, data in road_graph.edges(data=True):
+                fig.add_trace(
+                    go.Scatter(
+                        x=[road_graph.nodes[u]['x'], road_graph.nodes[v]['x']],
+                        y=[road_graph.nodes[u]['y'], road_graph.nodes[v]['y']],
+                        mode='lines',
+                        line=dict(color='yellow', width=2),
+                        name='Roads'
+                    )
+                )
+        
+        # Update layout for better visualization
+        fig.update_layout(
+            height=800,
+            width=1200,
+            title='2D Terrain Visualization with Boundaries',
+            xaxis_title='Longitude',
+            yaxis_title='Latitude'
+        )
+        
+        return fig
+
+def main():
+    st.title("DEM Analysis and Visualization")
+    
+    # [Previous OSM availability check remains the same]
     
     # Dropdown for selecting DEM file
     selected_dem = st.selectbox("Select DEM File", DEM_FILES)
@@ -345,8 +407,15 @@ def main():
                 st.dataframe(zonal_results[available_columns])
                 
                 # Create 3D visualization
-                fig = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
-                st.plotly_chart(fig, use_container_width=True)
+                fig_3d = create_3d_visualization(dem_file, intersecting_gdf, zonal_results)
+                st.plotly_chart(fig_3d, use_container_width=True)
+                
+                # Fetch OSM features for 2D map (optional)
+                osm_features = fetch_osm_features(dem_file) if OSM_AVAILABLE else None
+                
+                # Create 2D visualization
+                fig_2d = create_2d_map(dem_file, vector_file, osm_features)
+                st.plotly_chart(fig_2d, use_container_width=True)
 
 if __name__ == "__main__":
     main()
