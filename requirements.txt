@@ -14,4 +14,4 @@ plotly
 requests
 osmnx
 leafmap
-leafmap.folium
+streamlit-folium
