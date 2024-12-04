@@ -15,13 +15,13 @@ DEM_FILES = [
     'DHADING_Netrawati.tif',
     'DHADING_Khaniyabash.tif', 
     'DHADING_Jwalamukhi.tif', 
-    'DHADING_galchhi.tif', 
-    'DHADINGg_Gajuri.tif', 
-    'DHADING_Dhunibesi.tif', 
-    'DHADING_Benighat_Rorang.tif'
-    'DHADING_Galchi.tif',
+    'DHADING_Galchi.tif', 
+    'DHADING_Gajuri.tif', 
+    'DHADING_Benighat_Rorang.tif', 
+    'DHADING_Nilkantha.tif',
     'DHADING_Gangajamuna.tif',
     'DHADING_Dhunibesi.tif',
+    'DHADING_Siddhalek.tif',
 ]
 
 def fetch_github_file(url):
