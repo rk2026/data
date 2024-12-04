@@ -10,6 +10,17 @@ import requests
 from io import BytesIO
 import shapely
 
+# List of available DEM files
+DEM_FILES = [
+    'Dhading_Netrawati.tif',
+    'Dhading_Khaniyabash.tif', 
+    'Dhading_Jwalamukhi.tif', 
+    'Dhading_galchhi.tif', 
+    'Dhading_Gajuri.tif', 
+    'Dhading_dhunibesi.tif', 
+    'Dhading_Benighat_Rorang.tif'
+]
+
 def fetch_github_file(url):
     """Fetch file from GitHub URL"""
     try:
@@ -237,14 +248,18 @@ def create_3d_visualization(dem_path, intersecting_gdf, zonal_results):
 def main():
     st.title("DEM Analysis and 3D Visualization")
     
-    # GitHub URLs (replace with actual URLs)
-    dem_url = st.text_input("Enter DEM File GitHub URL", 
-                            "https://github.com/rk2026/data/raw/main/DHADING_Thakre.tif")
-    vector_url = st.text_input("Enter Vector Layer GitHub URL", 
-                               "https://github.com/rk2026/data/raw/main/Bagmati_ward.gpkg")
+    # Dropdown for selecting DEM file
+    selected_dem = st.selectbox("Select DEM File", DEM_FILES)
+    
+    # Construct GitHub URL for the selected DEM
+    base_url = "https://github.com/rk2026/data/raw/main/"
+    dem_url = base_url + selected_dem
+    
+    # Fixed Vector Layer URL (assuming it remains the same)
+    vector_url = base_url + "Bagmati_ward.gpkg"
     
     if st.button("Process Data"):
-        with st.spinner("Processing DEM and Vector Data..."):
+        with st.spinner(f"Processing {selected_dem}..."):
             # Fetch files
             dem_file = fetch_github_file(dem_url)
             vector_file = fetch_github_file(vector_url)
@@ -254,7 +269,7 @@ def main():
                 zonal_results, intersecting_gdf = process_dem_zonal_stats(dem_file, vector_file)
                 
                 # Display results table
-                st.subheader("Zonal Statistics Results")
+                st.subheader(f"Zonal Statistics Results for {selected_dem}")
                 # Select columns to display
                 display_columns = [
                     'DISTRICT', 'GaPa_NaPa', 'Type_GN', 'NEW_WARD_N', 
