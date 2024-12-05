@@ -22,7 +22,7 @@ def load_dem_files():
 
 def calculate_zonal_statistics(dem_path, vector_path):
     """
-    Calculate zonal statistics with robust spatial intersection handling
+    Calculate zonal statistics for each polygon in the vector layer
     """
     try:
         # Read vector layer
@@ -33,7 +33,7 @@ def calculate_zonal_statistics(dem_path, vector_path):
             # Ensure consistent CRS
             vector_gdf = vector_gdf.to_crs(dem_src.crs)
             
-            # Get raster bounds and create spatial index for faster intersection
+            # Get raster bounds
             raster_bounds = box(*dem_src.bounds)
             
             # Initialize lists to store results
@@ -42,26 +42,20 @@ def calculate_zonal_statistics(dem_path, vector_path):
             # Iterate through each polygon
             for index, row in vector_gdf.iterrows():
                 try:
-                    # Precise intersection check with actual geometry
-                    intersection = row.geometry.intersection(raster_bounds)
-                    
-                    # Skip if no meaningful intersection
-                    if intersection.is_empty or intersection.area == 0:
-                        st.warning(f"Polygon {index} does not meaningfully intersect with the raster.")
+                    # Check if polygon intersects with raster bounds
+                    if not row.geometry.intersects(raster_bounds):
+                        st.warning(f"Polygon {index} does not intersect with the raster.")
                         continue
                     
-                    # Clip polygon to raster bounds
-                    clipped_geom = row.geometry.intersection(raster_bounds)
-                    
-                    # Create a mask for the clipped geometry
+                    # Create a mask for the current polygon
                     out_image, out_transform = mask(
                         dem_src, 
-                        [clipped_geom.__geo_interface__], 
+                        [row.geometry.__geo_interface__], 
                         crop=True, 
                         nodata=np.nan
                     )
                     
-                    # Rest of your existing statistics calculation...
+                    # Calculate statistics
                     masked_data = out_image[0]
                     valid_data = masked_data[~np.isnan(masked_data)]
                     
@@ -69,25 +63,46 @@ def calculate_zonal_statistics(dem_path, vector_path):
                         min_val = np.min(valid_data)
                         max_val = np.max(valid_data)
                         
-                        # Existing coordinate and result processing...
-                        results.append({
-                            'DISTRICT': row.get('DISTRICT', 'N/A'),
-                            'GaPa_NaPa': row.get('GaPa_NaPa', 'N/A'),
-                            'NEW_WARD_N': row.get('NEW_WARD_N', 'N/A'),
-                            'Type_GN': row.get('Type_GN', 'N/A'),
-                            'min_elevation': min_val,
-                            'max_elevation': max_val,
-                            # ... other existing fields
-                        })
+                        # Find pixel coordinates for min and max
+                        min_pixel = np.where(masked_data == min_val)
+                        max_pixel = np.where(masked_data == max_val)
+                        
+                        # Ensure we have valid pixel coordinates
+                        if min_pixel[0].size > 0 and min_pixel[1].size > 0 and \
+                           max_pixel[0].size > 0 and max_pixel[1].size > 0:
+                            # Convert pixel coordinates to geographic coordinates
+                            min_lon, min_lat = rasterio.transform.xy(
+                                out_transform, min_pixel[1][0], min_pixel[0][0]
+                            )
+                            max_lon, max_lat = rasterio.transform.xy(
+                                out_transform, max_pixel[1][0], max_pixel[0][0]
+                            )
+                            
+                            results.append({
+                                'DISTRICT': row.get('DISTRICT', 'N/A'),
+                                'GaPa_NaPa': row.get('GaPa_NaPa', 'N/A'),
+                                'NEW_WARD_N': row.get('NEW_WARD_N', 'N/A'),
+                                'Type_GN': row.get('Type_GN', 'N/A'),
+                                'min_elevation': min_val,
+                                'max_elevation': max_val,
+                                'min_lon': min_lon,
+                                'min_lat': min_lat,
+                                'max_lon': max_lon,
+                                'max_lat': max_lat,
+                                'geometry': row.geometry
+                            })
+                        else:
+                            st.warning(f"Could not find valid pixel coordinates for polygon {index}")
                 
                 except Exception as e:
-                    st.warning(f"Error processing polygon {index}: {str(e)}")
+                    st.warning(f"Could not process polygon {index}: {str(e)}")
             
+            # Convert results to DataFrame
             results_df = pd.DataFrame(results)
             return results_df, vector_gdf
     
     except Exception as e:
-        st.error(f"Comprehensive error in zonal statistics: {e}")
+        st.error(f"Error in zonal statistics calculation: {e}")
         return pd.DataFrame(), gpd.GeoDataFrame()
 
 def create_interactive_map(dem_results, vector_gdf):
@@ -95,6 +110,9 @@ def create_interactive_map(dem_results, vector_gdf):
     Create an interactive map with administrative boundaries and points
     """
     try:
+        # Print column names for debugging
+        print("Columns in dem_results:", list(dem_results.columns))
+        
         # Compute map center
         center_lat = vector_gdf.geometry.centroid.y.mean()
         center_lon = vector_gdf.geometry.centroid.x.mean()
@@ -146,6 +164,12 @@ def create_interactive_map(dem_results, vector_gdf):
         
         # Add minimum and maximum elevation points
         for idx, row in dem_results.iterrows():
+            # Check if required columns exist
+            required_columns = ['max_lat', 'max_lon', 'min_lat', 'min_lon', 'min_elevation', 'max_elevation', 'NEW_WARD_N']
+            if not all(col in dem_results.columns for col in required_columns):
+                st.warning(f"Missing required columns for mapping. Available columns: {list(dem_results.columns)}")
+                continue
+            
             # Minimum height point
             folium.CircleMarker(
                 location=[row['min_lat'], row['min_lon']],
