@@ -30,12 +30,20 @@ def calculate_zonal_statistics(dem_path, vector_path):
         
         # Read the raster and vector data
         with rasterio.open(dem_path) as dem_src:
+            # Get raster bounds
+            raster_bounds = box(*dem_src.bounds)
+            
             # Initialize lists to store results
             results = []
             
             # Iterate through each polygon
             for index, row in vector_gdf.iterrows():
                 try:
+                    # Check if polygon intersects with raster bounds
+                    if not row.geometry.intersects(raster_bounds):
+                        st.warning(f"Polygon {index} does not intersect with the raster.")
+                        continue
+                    
                     # Create a mask for the current polygon
                     out_image, out_transform = mask(
                         dem_src, 
